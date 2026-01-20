@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>算数・数学 図形作成ツール</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f3f4f6;
+        }
+        canvas {
+            background-image: 
+                linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+                linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px; /* デフォルトのグリッドサイズ */
+            background-color: white;
+            cursor: move;
+            touch-action: none;
+        }
+        /* グリッド非表示時のクラス */
+        canvas.no-grid {
+            background-image: none;
+        }
+        .input-group {
+            margin-bottom: 0.75rem;
+        }
+        .input-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 0.25rem;
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            transition: border-color 0.15s ease-in-out;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8; 
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-10">
+        <div class="flex items-center gap-4">
+            <!-- ハンバーガーメニューボタン -->
+            <button onclick="toggleHelp()" class="p-2 rounded-lg hover:bg-gray-100 text-gray-600 focus:outline-none transition" title="使い方を見る">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+            <div class="flex items-center gap-2">
+                <div class="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm5.414 0a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243z" />
+                    </svg>
+                </div>
+                <h1 class="text-xl font-bold text-gray-800">算数・数学 図形作成ツール</h1>
+            </div>
+        </div>
+        <button onclick="downloadImage()" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>画像保存 (PNG)</span>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar Controls -->
+        <aside class="w-80 bg-white border-r border-gray-200 overflow-y-auto flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-0">
+            <div class="p-5 space-y-6">
+                
+                <!-- 図形選択 -->
+                <div>
+                    <label class="input-label">図形の種類</label>
+                    <select id="shapeType" class="input-field bg-gray-50 font-medium" onchange="updateUI()">
+                        <option value="triangle">三角形 (3辺の長さ)</option>
+                        <option value="triangleSAS">三角形 (2辺とその間の角)</option>
+                        <option value="rectangle">長方形・正方形</option>
+                        <option value="parallelogram">平行四辺形</option>
+                        <option value="circle">円</option>
+                        <option value="angle">角度・角の大きさ</option>
+                        <option value="coords">多角形 (座標指定)</option>
+                    </select>
+                </div>
+
+                <hr class="border-gray-100">
+
+                <!-- 動的入力エリア -->
+                <div id="dynamicInputs" class="space-y-4">
+                    <!-- JSで動的に生成されます -->
+                </div>
+
+                <hr class="border-gray-100">
+
+                <!-- 表示設定 -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        表示オプション
+                    </h3>
+                    
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" id="showGrid" checked onchange="updateCanvas()" class="rounded text-blue-600 focus:ring-blue-500">
+                            方眼紙表示
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" id="showVertices" checked onchange="updateCanvas()" class="rounded text-blue-600 focus:ring-blue-500">
+                            頂点名 (A,B..)
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" id="showLengths" onchange="updateCanvas()" class="rounded text-blue-600 focus:ring-blue-500">
+                            辺の長さ
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" id="showAngles" onchange="updateCanvas()" class="rounded text-blue-600 focus:ring-blue-500">
+                            角度マーク
+                        </label>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                         <div class="input-group">
+                            <label class="input-label">線の太さ</label>
+                            <input type="number" id="strokeWidth" value="2" min="1" max="10" class="input-field" onchange="updateCanvas()">
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">文字サイズ</label>
+                            <input type="number" id="fontSize" value="16" min="8" max="48" class="input-field" onchange="updateCanvas()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-xs text-gray-400 mt-auto pt-4">
+                    ヒント: 描画エリアをドラッグすると図形を移動できます。
+                </div>
+            </div>
+        </aside>
+
+        <!-- Canvas Area -->
+        <main class="flex-1 bg-gray-100 relative overflow-hidden flex items-center justify-center p-4">
+            <div class="shadow-lg border border-gray-200 bg-white relative">
+                 <!-- Canvas -->
+                <canvas id="mainCanvas" width="800" height="600"></canvas>
+                
+                <!-- Reset Position Button -->
+                <button onclick="resetView()" class="absolute bottom-4 right-4 bg-white border border-gray-300 shadow-sm p-2 rounded-full hover:bg-gray-50 text-gray-600" title="位置をリセット">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Help Modal (使い方ガイド) -->
+    <div id="helpModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <div class="flex items-center gap-2">
+                    <div class="bg-blue-100 text-blue-600 p-2 rounded-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h2 class="text-xl font-bold text-gray-800">使い方ガイド</h2>
+                </div>
+                <button onclick="toggleHelp()" class="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-200 transition">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="p-6 overflow-y-auto space-y-8">
+                
+                <!-- Section 1 -->
+                <div class="flex gap-4">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">1</div>
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-900 mb-2">図形を作る</h3>
+                        <p class="text-gray-600 leading-relaxed mb-3">
+                            画面左側のメニューから、作りたい図形（三角形や円など）を選びます。<br>
+                            下の数字を変えると、すぐに形が変わります。
+                        </p>
+                        <div class="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800">
+                            <strong>ヒント：</strong> 正確な図形が自動で描かれるので、定規やコンパスは必要ありません。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2 -->
+                <div class="flex gap-4">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">2</div>
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-900 mb-2">見た目を整える</h3>
+                        <p class="text-gray-600 leading-relaxed">
+                            「方眼紙表示」や「頂点名」などのチェックを入れたり外したりして、必要な情報だけを表示できます。<br>
+                            図形をマウスでつかんで（ドラッグして）、好きな場所に動かすこともできます。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Section 3 -->
+                <div class="flex gap-4">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">3</div>
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-900 mb-2">画像を保存する</h3>
+                        <p class="text-gray-600 leading-relaxed mb-3">
+                            右上の<strong>「画像保存 (PNG)」</strong>ボタンを押すと、パソコンに画像として保存されます。
+                        </p>
+                        <ul class="list-disc list-inside text-gray-600 space-y-1 bg-gray-50 p-3 rounded-lg">
+                            <li>背景が透明なので、WordやPowerPointにきれいに貼り付けられます。</li>
+                            <li>方眼紙のマス目は保存されません（図形だけ保存されます）。</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-center rounded-b-xl">
+                <button onclick="toggleHelp()" class="bg-blue-600 text-white px-8 py-2.5 rounded-lg hover:bg-blue-700 font-medium transition shadow-sm">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // State
+        let currentShape = 'triangle';
+        let dragStart = { x: 0, y: 0 };
+        let offset = { x: 400, y: 300 }; // Center of canvas
+        let isDragging = false;
+        
+        // Scale unit (1 unit input = how many pixels)
+        // Let's create a multiplier so user inputs like "5 cm" look reasonable.
+        // Assuming 1 unit = 20px (1 grid cell)
+        const PIXEL_SCALE = 20;
+
+        // Help Modal Logic
+        function toggleHelp() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.toggle('hidden');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('helpModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                toggleHelp();
+            }
+        });
+
+        // UI Update Logic
+        function updateUI() {
+            const type = document.getElementById('shapeType').value;
+            const container = document.getElementById('dynamicInputs');
+            container.innerHTML = '';
+            currentShape = type;
+
+            const createInput = (id, label, value, type='number', step='0.1') => {
+                return `
+                    <div class="input-group">
+                        <label class="input-label">${label}</label>
+                        <input type="${type}" id="${id}" value="${value}" step="${step}" class="input-field" oninput="updateCanvas()">
+                    </div>
+                `;
+            };
+
+            if (type === 'triangle') {
+                container.innerHTML += `<div class="grid grid-cols-3 gap-2">
+                    ${createInput('sideA', '辺 A', 6)}
+                    ${createInput('sideB', '辺 B', 5)}
+                    ${createInput('sideC', '辺 C', 4)}
+                </div>`;
+                container.innerHTML += `<div class="text-xs text-amber-600 mt-1" id="triangleWarning" style="display:none">⚠️ 三角形が成立しません</div>`;
+            } else if (type === 'triangleSAS') {
+                 container.innerHTML += `
+                    <div class="grid grid-cols-2 gap-2">
+                        ${createInput('sasSideA', '辺 A', 6)}
+                        ${createInput('sasSideB', '辺 B', 5)}
+                    </div>
+                    ${createInput('sasAngle', '間の角 (°)', 60)}
+                `;
+            } else if (type === 'rectangle') {
+                container.innerHTML += `
+                    <div class="grid grid-cols-2 gap-2">
+                        ${createInput('rectW', '横幅', 8)}
+                        ${createInput('rectH', '高さ', 5)}
+                    </div>
+                `;
+            } else if (type === 'parallelogram') {
+                container.innerHTML += `
+                    <div class="grid grid-cols-2 gap-2">
+                        ${createInput('paraBase', '底辺', 8)}
+                        ${createInput('paraSide', '斜辺', 5)}
+                    </div>
+                    ${createInput('paraAngle', '左下の角度 (°)', 60)}
+                `;
+            } else if (type === 'circle') {
+                container.innerHTML += createInput('circleR', '半径', 5);
+            } else if (type === 'angle') {
+                container.innerHTML += `
+                     <div class="grid grid-cols-2 gap-2">
+                        ${createInput('angleSize', '角度 (°)', 45)}
+                        ${createInput('angleLen', '線の長さ', 6)}
+                     </div>
+                `;
+            } else if (type === 'coords') {
+                container.innerHTML += `
+                    <div class="input-group">
+                        <label class="input-label">座標 (x, y) 1行に1点</label>
+                        <textarea id="coordInput" class="input-field h-32 font-mono" oninput="updateCanvas()">0, 0
+5, 0
+3, 4</textarea>
+                    </div>
+                `;
+            }
+
+            updateCanvas();
+        }
+
+        // Draw Logic
+        function updateCanvas() {
+            // Clear
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Grid
+            const showGrid = document.getElementById('showGrid').checked;
+            canvas.classList.toggle('no-grid', !showGrid);
+            /* Note: We rely on CSS background for the grid to keep the export clean (transparent) 
+               unless we manually draw it. For "Print/Export", users usually want just the shape.
+               However, to make the grid exportable, we need to draw it on canvas if requested.
+               For this MVP, we will only draw the shape on the canvas element itself so PNG is transparent. 
+            */
+
+            // Settings
+            ctx.lineWidth = document.getElementById('strokeWidth').value;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#000000';
+            ctx.font = `${document.getElementById('fontSize').value}px 'Noto Sans JP'`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const showVertices = document.getElementById('showVertices').checked;
+            const showLengths = document.getElementById('showLengths').checked;
+            const showAngles = document.getElementById('showAngles').checked;
+
+            ctx.save();
+            ctx.translate(offset.x, offset.y);
+
+            // Shape Drawing Logic
+            let points = [];
+            let isValid = true;
+            const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+            try {
+                if (currentShape === 'triangle') {
+                    const a = parseFloat(document.getElementById('sideA').value) * PIXEL_SCALE;
+                    const b = parseFloat(document.getElementById('sideB').value) * PIXEL_SCALE;
+                    const c = parseFloat(document.getElementById('sideC').value) * PIXEL_SCALE;
+
+                    // Triangle Inequality Check
+                    if (a + b <= c || a + c <= b || b + c <= a) {
+                        document.getElementById('triangleWarning').style.display = 'block';
+                        isValid = false;
+                    } else {
+                        document.getElementById('triangleWarning').style.display = 'none';
+                        // Law of Cosines to find angle at A (between b and c) - actually let's standard placement
+                        // Place C at (0,0) -> No, let's place B at origin for easier SAS/SSS logic
+                        // Let's place side 'c' (AB) on the x-axis.
+                        // A = (0, 0)
+                        // B = (c, 0)
+                        // C = (x, y)
+                        // cos(A) = (b^2 + c^2 - a^2) / (2bc)
+                        const cosA = (b*b + c*c - a*a) / (2*b*c);
+                        const angleA = Math.acos(cosA);
+                        const Cx = b * Math.cos(angleA);
+                        const Cy = -b * Math.sin(angleA); // Up is negative Y
+
+                        // Centering logic
+                        const centerX = (0 + c + Cx) / 3;
+                        const centerY = (0 + 0 + Cy) / 3;
+
+                        points = [
+                            {x: 0 - centerX, y: 0 - centerY, label: 'A'},
+                            {x: c - centerX, y: 0 - centerY, label: 'B'},
+                            {x: Cx - centerX, y: Cy - centerY, label: 'C'}
+                        ];
+                    }
+
+                } else if (currentShape === 'triangleSAS') {
+                    const b = parseFloat(document.getElementById('sasSideA').value) * PIXEL_SCALE;
+                    const c = parseFloat(document.getElementById('sasSideB').value) * PIXEL_SCALE;
+                    const ang = parseFloat(document.getElementById('sasAngle').value) * (Math.PI / 180);
+
+                    // A at origin, B on x-axis
+                    // C calculated by angle
+                    const Bx = c;
+                    const By = 0;
+                    const Cx = b * Math.cos(ang);
+                    const Cy = -b * Math.sin(ang);
+
+                    const centerX = (0 + Bx + Cx) / 3;
+                    const centerY = (0 + By + Cy) / 3;
+
+                     points = [
+                        {x: 0 - centerX, y: 0 - centerY, label: 'A'},
+                        {x: Bx - centerX, y: By - centerY, label: 'B'},
+                        {x: Cx - centerX, y: Cy - centerY, label: 'C'}
+                    ];
+
+                } else if (currentShape === 'rectangle') {
+                    const w = parseFloat(document.getElementById('rectW').value) * PIXEL_SCALE;
+                    const h = parseFloat(document.getElementById('rectH').value) * PIXEL_SCALE;
+                    
+                    const hw = w/2;
+                    const hh = h/2;
+
+                    points = [
+                        {x: -hw, y: hh, label: 'A'}, // Bottom Left (visual)
+                        {x: hw, y: hh, label: 'B'},  // Bottom Right
+                        {x: hw, y: -hh, label: 'C'}, // Top Right
+                        {x: -hw, y: -hh, label: 'D'} // Top Left
+                    ];
+
+                } else if (currentShape === 'parallelogram') {
+                    const base = parseFloat(document.getElementById('paraBase').value) * PIXEL_SCALE;
+                    const side = parseFloat(document.getElementById('paraSide').value) * PIXEL_SCALE;
+                    const ang = parseFloat(document.getElementById('paraAngle').value) * (Math.PI / 180);
+
+                    // H calculation
+                    const h = side * Math.sin(ang);
+                    const offsetX = side * Math.cos(ang);
+
+                    const wTotal = base + offsetX;
+                    const hTotal = h;
+
+                    // Centering
+                    const cx = wTotal / 2;
+                    const cy = -hTotal / 2; // Up is neg
+
+                    // A=(0,0), B=(base, 0), C=(base+off, -h), D=(off, -h)
+                    // Shifted to center
+                    
+                    // Actually, let's just coordinate them relative to a roughly center point
+                    // Bottom-Left
+                    const pA = {x: 0, y: 0};
+                    const pB = {x: base, y: 0};
+                    const pC = {x: base + offsetX, y: -h};
+                    const pD = {x: offsetX, y: -h};
+
+                    const midX = (pA.x + pC.x)/2;
+                    const midY = (pA.y + pC.y)/2;
+
+                    points = [
+                        {x: pA.x - midX, y: pA.y - midY, label: 'A'},
+                        {x: pB.x - midX, y: pB.y - midY, label: 'B'},
+                        {x: pC.x - midX, y: pC.y - midY, label: 'C'},
+                        {x: pD.x - midX, y: pD.y - midY, label: 'D'}
+                    ];
+
+                } else if (currentShape === 'circle') {
+                    const r = parseFloat(document.getElementById('circleR').value) * PIXEL_SCALE;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    
+                    points = [{x:0, y:0, label:'O'}]; // Center
+                    if(showVertices) {
+                         ctx.fillStyle = 'black';
+                         ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+                         drawText('O', 0, 0, 'center');
+                    }
+                    if(showLengths) {
+                        ctx.beginPath();
+                        ctx.moveTo(0,0);
+                        ctx.lineTo(r, 0);
+                        ctx.setLineDash([5, 5]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        drawText(document.getElementById('circleR').value, r/2, -10, 'mid');
+                    }
+                    isValid = false; // Custom draw for circle handled here
+
+                } else if (currentShape === 'angle') {
+                    const len = parseFloat(document.getElementById('angleLen').value) * PIXEL_SCALE;
+                    const deg = parseFloat(document.getElementById('angleSize').value);
+                    const rad = deg * (Math.PI / 180);
+
+                    points = [
+                        {x: len, y: 0, label: 'A'},
+                        {x: 0, y: 0, label: 'O'},
+                        {x: len * Math.cos(-rad), y: len * Math.sin(-rad), label: 'B'}
+                    ];
+                } else if (currentShape === 'coords') {
+                    const raw = document.getElementById('coordInput').value.trim().split('\n');
+                    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+                    
+                    const tempPoints = raw.map((line, i) => {
+                        const [x, y] = line.split(',').map(n => parseFloat(n) * PIXEL_SCALE);
+                        if (isNaN(x) || isNaN(y)) return null;
+                        
+                        // Y flip for screen coords (Up is negative)
+                        const screenY = -y; 
+                        
+                        if(x < xMin) xMin = x;
+                        if(x > xMax) xMax = x;
+                        if(screenY < yMin) yMin = screenY;
+                        if(screenY > yMax) yMax = screenY;
+
+                        return {x: x, y: screenY, label: labels[i] || `P${i}`};
+                    }).filter(p => p !== null);
+
+                    const cx = (xMin + xMax) / 2;
+                    const cy = (yMin + yMax) / 2;
+
+                    points = tempPoints.map(p => ({
+                        x: p.x - cx,
+                        y: p.y - cy,
+                        label: p.label
+                    }));
+                }
+
+                // Generic Polygon Drawing
+                if (isValid && points.length > 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    if (currentShape !== 'angle') {
+                         ctx.closePath();
+                    }
+                    ctx.stroke();
+
+                    // Labels & Lengths
+                    points.forEach((p, i) => {
+                        // Vertices
+                        if (showVertices) {
+                            const extension = 20;
+                            // Vector from center (0,0) to point
+                            const dist = Math.sqrt(p.x*p.x + p.y*p.y);
+                            const dirX = dist === 0 ? 0 : p.x / dist;
+                            const dirY = dist === 0 ? 0 : p.y / dist;
+                            
+                            drawText(p.label, p.x + dirX*extension, p.y + dirY*extension, 'vertex');
+                        }
+
+                        // Side Lengths (between this and next)
+                        if (showLengths && i < points.length && (currentShape !== 'angle' || i < points.length -1)) {
+                            let nextIndex = (i + 1) % points.length;
+                            // For angle mode, don't connect last to first
+                            if (currentShape === 'angle' && i === points.length -1) return;
+                            if (currentShape === 'angle' && i === 1) return; // Don't draw line A-B, only O-A and O-B
+
+                            const pNext = points[nextIndex];
+                            
+                            // Midpoint
+                            const midX = (p.x + pNext.x) / 2;
+                            const midY = (p.y + pNext.y) / 2;
+                            
+                            // Calculate length value to display
+                            const dx = pNext.x - p.x;
+                            const dy = pNext.y - p.y;
+                            const pixelLen = Math.sqrt(dx*dx + dy*dy);
+                            const val = Math.round((pixelLen / PIXEL_SCALE) * 10) / 10;
+                            
+                            // Offset text slightly outward perpendicular to line
+                            // Normal vector (-dy, dx)
+                            // We need to determine "outward". Simple heuristic: away from center (0,0)
+                            let nx = -dy; 
+                            let ny = dx;
+                            const len = Math.sqrt(nx*nx + ny*ny);
+                            nx /= len; ny /= len;
+
+                            // Check dot product with midpoint vector to ensure it points out
+                            if (midX*nx + midY*ny < 0) {
+                                nx = -nx; ny = -ny;
+                            }
+
+                            drawText(val.toString(), midX + nx*15, midY + ny*15, 'len');
+                        }
+                    });
+
+                    // Angle Mark (Simple implementation for Triangle/Angle/Para)
+                    if (showAngles && (currentShape === 'triangle' || currentShape === 'triangleSAS' || currentShape === 'angle' || currentShape === 'parallelogram')) {
+                        // Draw arc at 2nd point (index 1) for triangle/angle usually user focuses on corner
+                        // For generic, let's draw arcs at all corners if poly
+                        
+                        points.forEach((p, i) => {
+                             const prev = points[(i - 1 + points.length) % points.length];
+                             const next = points[(i + 1) % points.length];
+                             
+                             if(currentShape === 'angle' && i !== 1) return; // Only at O
+
+                             const a1 = Math.atan2(prev.y - p.y, prev.x - p.x);
+                             const a2 = Math.atan2(next.y - p.y, next.x - p.x);
+                             
+                             ctx.beginPath();
+                             ctx.arc(p.x, p.y, 20, a1, a2, a2 < a1); // Simple arc logic, might need refinement for concave
+                             ctx.stroke();
+                        });
+                    }
+                }
+
+            } catch (e) {
+                console.error("Drawing error:", e);
+            }
+
+            ctx.restore();
+        }
+
+        function drawText(text, x, y, type) {
+            ctx.fillStyle = '#000000';
+            ctx.fillText(text, x, y);
+        }
+
+        // Dragging Logic
+        canvas.addEventListener('mousedown', e => {
+            isDragging = true;
+            dragStart = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (isDragging) {
+                const dx = e.clientX - dragStart.x;
+                const dy = e.clientY - dragStart.y;
+                offset.x += dx;
+                offset.y += dy;
+                dragStart = { x: e.clientX, y: e.clientY };
+                updateCanvas();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        function resetView() {
+            offset = { x: canvas.width / 2, y: canvas.height / 2 };
+            updateCanvas();
+        }
+
+        function downloadImage() {
+            // Create a temporary canvas to handle background transparency/grid choice
+            // Current requirement: PNG (Transparent). 
+            // The main canvas has a CSS background, but the context itself is transparent pixels unless drawn on.
+            // If we just toDataURL, it will be transparent (good).
+            
+            const link = document.createElement('a');
+            link.download = `figure-${currentShape}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Initialize
+        updateUI();
+
+    </script>
+</body>
+</html>
