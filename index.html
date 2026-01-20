@@ -17,7 +17,7 @@
                 linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
             background-size: 20px 20px; /* デフォルトのグリッドサイズ */
             background-color: white;
-            cursor: move;
+            cursor: crosshair; /* デフォルトカーソル変更 */
             touch-action: none;
         }
         /* グリッド非表示時のクラス */
@@ -116,9 +116,7 @@
                 <hr class="border-gray-100">
 
                 <!-- 動的入力エリア -->
-                <div id="dynamicInputs" class="space-y-4">
-                    <!-- JSで動的に生成されます -->
-                </div>
+                <div id="dynamicInputs" class="space-y-4"></div>
 
                 <hr class="border-gray-100">
 
@@ -163,8 +161,12 @@
                     </div>
                 </div>
 
-                <div class="text-xs text-gray-400 mt-auto pt-4">
-                    ヒント: 描画エリアをドラッグすると図形を移動できます。
+                <div class="text-xs text-gray-500 mt-auto pt-4 border-t border-gray-100">
+                    <p class="mb-1">💡 ヒント:</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>キャンバスの余白をドラッグ：移動</li>
+                        <li><span class="font-bold text-blue-600">頂点（●）をドラッグ：変形</span></li>
+                    </ul>
                 </div>
             </div>
         </aside>
@@ -225,10 +227,11 @@
                 <div class="flex gap-4">
                     <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">2</div>
                     <div>
-                        <h3 class="font-bold text-lg text-gray-900 mb-2">見た目を整える</h3>
+                        <h3 class="font-bold text-lg text-gray-900 mb-2">見た目を整える・変形する</h3>
                         <p class="text-gray-600 leading-relaxed">
-                            「方眼紙表示」や「頂点名」などのチェックを入れたり外したりして、必要な情報だけを表示できます。<br>
-                            図形をマウスでつかんで（ドラッグして）、好きな場所に動かすこともできます。
+                            <strong>頂点（角の丸い点）をマウスでドラッグ</strong>すると、形を自由に変えられます。<br>
+                            変形に合わせて、左側の数値も自動的に更新されます。<br>
+                            また、「方眼紙表示」や「頂点名」などの表示/非表示も切り替えられます。
                         </p>
                     </div>
                 </div>
@@ -265,14 +268,18 @@
         
         // State
         let currentShape = 'triangle';
-        let dragStart = { x: 0, y: 0 };
         let offset = { x: 400, y: 300 }; // Center of canvas
+        let currentPoints = []; // Stores displayed points {x, y, label} (relative to offset)
+        
+        // Interaction State
         let isDragging = false;
+        let isDraggingVertex = false;
+        let draggingVertexIndex = -1;
+        let dragStart = { x: 0, y: 0 };
         
         // Scale unit (1 unit input = how many pixels)
-        // Let's create a multiplier so user inputs like "5 cm" look reasonable.
-        // Assuming 1 unit = 20px (1 grid cell)
         const PIXEL_SCALE = 20;
+        const HIT_RADIUS = 15; // Radius to detect click on vertex
 
         // Help Modal Logic
         function toggleHelp() {
@@ -280,7 +287,6 @@
             modal.classList.toggle('hidden');
         }
 
-        // Close modal when clicking outside
         document.getElementById('helpModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 toggleHelp();
@@ -291,66 +297,71 @@
         function updateUI() {
             const type = document.getElementById('shapeType').value;
             const container = document.getElementById('dynamicInputs');
-            container.innerHTML = '';
-            currentShape = type;
+            
+            // Rebuild inputs if shape type changed OR if container is empty (first run)
+            // Note: Removed comments from HTML container to make this check robust
+            if (currentShape !== type || container.children.length === 0) {
+                container.innerHTML = '';
+                currentShape = type;
+                
+                const createInput = (id, label, value, type='number', step='0.1') => {
+                    return `
+                        <div class="input-group">
+                            <label class="input-label">${label}</label>
+                            <input type="${type}" id="${id}" value="${value}" step="${step}" class="input-field" oninput="updateCanvas()">
+                        </div>
+                    `;
+                };
 
-            const createInput = (id, label, value, type='number', step='0.1') => {
-                return `
-                    <div class="input-group">
-                        <label class="input-label">${label}</label>
-                        <input type="${type}" id="${id}" value="${value}" step="${step}" class="input-field" oninput="updateCanvas()">
-                    </div>
-                `;
-            };
-
-            if (type === 'triangle') {
-                container.innerHTML += `<div class="grid grid-cols-3 gap-2">
-                    ${createInput('sideA', '辺 A', 6)}
-                    ${createInput('sideB', '辺 B', 5)}
-                    ${createInput('sideC', '辺 C', 4)}
-                </div>`;
-                container.innerHTML += `<div class="text-xs text-amber-600 mt-1" id="triangleWarning" style="display:none">⚠️ 三角形が成立しません</div>`;
-            } else if (type === 'triangleSAS') {
-                 container.innerHTML += `
-                    <div class="grid grid-cols-2 gap-2">
-                        ${createInput('sasSideA', '辺 A', 6)}
-                        ${createInput('sasSideB', '辺 B', 5)}
-                    </div>
-                    ${createInput('sasAngle', '間の角 (°)', 60)}
-                `;
-            } else if (type === 'rectangle') {
-                container.innerHTML += `
-                    <div class="grid grid-cols-2 gap-2">
-                        ${createInput('rectW', '横幅', 8)}
-                        ${createInput('rectH', '高さ', 5)}
-                    </div>
-                `;
-            } else if (type === 'parallelogram') {
-                container.innerHTML += `
-                    <div class="grid grid-cols-2 gap-2">
-                        ${createInput('paraBase', '底辺', 8)}
-                        ${createInput('paraSide', '斜辺', 5)}
-                    </div>
-                    ${createInput('paraAngle', '左下の角度 (°)', 60)}
-                `;
-            } else if (type === 'circle') {
-                container.innerHTML += createInput('circleR', '半径', 5);
-            } else if (type === 'angle') {
-                container.innerHTML += `
-                     <div class="grid grid-cols-2 gap-2">
-                        ${createInput('angleSize', '角度 (°)', 45)}
-                        ${createInput('angleLen', '線の長さ', 6)}
-                     </div>
-                `;
-            } else if (type === 'coords') {
-                container.innerHTML += `
-                    <div class="input-group">
-                        <label class="input-label">座標 (x, y) 1行に1点</label>
-                        <textarea id="coordInput" class="input-field h-32 font-mono" oninput="updateCanvas()">0, 0
+                if (type === 'triangle') {
+                    container.innerHTML += `<div class="grid grid-cols-3 gap-2">
+                        ${createInput('sideA', '辺 A', 6)}
+                        ${createInput('sideB', '辺 B', 5)}
+                        ${createInput('sideC', '辺 C', 4)}
+                    </div>`;
+                    container.innerHTML += `<div class="text-xs text-amber-600 mt-1" id="triangleWarning" style="display:none">⚠️ 三角形が成立しません</div>`;
+                } else if (type === 'triangleSAS') {
+                     container.innerHTML += `
+                        <div class="grid grid-cols-2 gap-2">
+                            ${createInput('sasSideA', '辺 A', 6)}
+                            ${createInput('sasSideB', '辺 B', 5)}
+                        </div>
+                        ${createInput('sasAngle', '間の角 (°)', 60)}
+                    `;
+                } else if (type === 'rectangle') {
+                    container.innerHTML += `
+                        <div class="grid grid-cols-2 gap-2">
+                            ${createInput('rectW', '横幅', 8)}
+                            ${createInput('rectH', '高さ', 5)}
+                        </div>
+                    `;
+                } else if (type === 'parallelogram') {
+                    container.innerHTML += `
+                        <div class="grid grid-cols-2 gap-2">
+                            ${createInput('paraBase', '底辺', 8)}
+                            ${createInput('paraSide', '斜辺', 5)}
+                        </div>
+                        ${createInput('paraAngle', '左下の角度 (°)', 60)}
+                    `;
+                } else if (type === 'circle') {
+                    container.innerHTML += createInput('circleR', '半径', 5);
+                } else if (type === 'angle') {
+                    container.innerHTML += `
+                         <div class="grid grid-cols-2 gap-2">
+                            ${createInput('angleSize', '角度 (°)', 45)}
+                            ${createInput('angleLen', '線の長さ', 6)}
+                         </div>
+                    `;
+                } else if (type === 'coords') {
+                    container.innerHTML += `
+                        <div class="input-group">
+                            <label class="input-label">座標 (x, y) 1行に1点</label>
+                            <textarea id="coordInput" class="input-field h-32 font-mono" oninput="updateCanvas()">0, 0
 5, 0
 3, 4</textarea>
-                    </div>
-                `;
+                        </div>
+                    `;
+                }
             }
 
             updateCanvas();
@@ -358,64 +369,57 @@
 
         // Draw Logic
         function updateCanvas() {
-            // Clear
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Grid
-            const showGrid = document.getElementById('showGrid').checked;
+            const showGridEl = document.getElementById('showGrid');
+            if (!showGridEl) return; // Safety check
+            
+            const showGrid = showGridEl.checked;
             canvas.classList.toggle('no-grid', !showGrid);
-            /* Note: We rely on CSS background for the grid to keep the export clean (transparent) 
-               unless we manually draw it. For "Print/Export", users usually want just the shape.
-               However, to make the grid exportable, we need to draw it on canvas if requested.
-               For this MVP, we will only draw the shape on the canvas element itself so PNG is transparent. 
-            */
 
             // Settings
-            ctx.lineWidth = document.getElementById('strokeWidth').value;
+            ctx.lineWidth = document.getElementById('strokeWidth')?.value || 2;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = '#000000';
-            ctx.font = `${document.getElementById('fontSize').value}px 'Noto Sans JP'`;
+            ctx.font = `${document.getElementById('fontSize')?.value || 16}px 'Noto Sans JP'`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            const showVertices = document.getElementById('showVertices').checked;
-            const showLengths = document.getElementById('showLengths').checked;
-            const showAngles = document.getElementById('showAngles').checked;
+            const showVertices = document.getElementById('showVertices')?.checked;
+            const showLengths = document.getElementById('showLengths')?.checked;
+            const showAngles = document.getElementById('showAngles')?.checked;
 
-            ctx.save();
-            ctx.translate(offset.x, offset.y);
-
-            // Shape Drawing Logic
             let points = [];
             let isValid = true;
-            const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+            const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+            
+            // Safety Helper for Input Retrieval
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                return el ? parseFloat(el.value) : NaN;
+            };
 
             try {
                 if (currentShape === 'triangle') {
-                    const a = parseFloat(document.getElementById('sideA').value) * PIXEL_SCALE;
-                    const b = parseFloat(document.getElementById('sideB').value) * PIXEL_SCALE;
-                    const c = parseFloat(document.getElementById('sideC').value) * PIXEL_SCALE;
+                    const a = getVal('sideA') * PIXEL_SCALE;
+                    const b = getVal('sideB') * PIXEL_SCALE;
+                    const c = getVal('sideC') * PIXEL_SCALE;
 
-                    // Triangle Inequality Check
+                    if (isNaN(a) || isNaN(b) || isNaN(c)) return;
+
                     if (a + b <= c || a + c <= b || b + c <= a) {
-                        document.getElementById('triangleWarning').style.display = 'block';
+                        const warn = document.getElementById('triangleWarning');
+                        if(warn) warn.style.display = 'block';
                         isValid = false;
                     } else {
-                        document.getElementById('triangleWarning').style.display = 'none';
-                        // Law of Cosines to find angle at A (between b and c) - actually let's standard placement
-                        // Place C at (0,0) -> No, let's place B at origin for easier SAS/SSS logic
-                        // Let's place side 'c' (AB) on the x-axis.
-                        // A = (0, 0)
-                        // B = (c, 0)
-                        // C = (x, y)
-                        // cos(A) = (b^2 + c^2 - a^2) / (2bc)
+                        const warn = document.getElementById('triangleWarning');
+                        if(warn) warn.style.display = 'none';
                         const cosA = (b*b + c*c - a*a) / (2*b*c);
                         const angleA = Math.acos(cosA);
                         const Cx = b * Math.cos(angleA);
-                        const Cy = -b * Math.sin(angleA); // Up is negative Y
+                        const Cy = -b * Math.sin(angleA); 
 
-                        // Centering logic
                         const centerX = (0 + c + Cx) / 3;
                         const centerY = (0 + 0 + Cy) / 3;
 
@@ -427,12 +431,12 @@
                     }
 
                 } else if (currentShape === 'triangleSAS') {
-                    const b = parseFloat(document.getElementById('sasSideA').value) * PIXEL_SCALE;
-                    const c = parseFloat(document.getElementById('sasSideB').value) * PIXEL_SCALE;
-                    const ang = parseFloat(document.getElementById('sasAngle').value) * (Math.PI / 180);
+                    const b = getVal('sasSideA') * PIXEL_SCALE;
+                    const c = getVal('sasSideB') * PIXEL_SCALE;
+                    const ang = getVal('sasAngle') * (Math.PI / 180);
+                    
+                    if (isNaN(b) || isNaN(c) || isNaN(ang)) return;
 
-                    // A at origin, B on x-axis
-                    // C calculated by angle
                     const Bx = c;
                     const By = 0;
                     const Cx = b * Math.cos(ang);
@@ -448,230 +452,343 @@
                     ];
 
                 } else if (currentShape === 'rectangle') {
-                    const w = parseFloat(document.getElementById('rectW').value) * PIXEL_SCALE;
-                    const h = parseFloat(document.getElementById('rectH').value) * PIXEL_SCALE;
-                    
+                    const w = getVal('rectW') * PIXEL_SCALE;
+                    const h = getVal('rectH') * PIXEL_SCALE;
+                    if (isNaN(w) || isNaN(h)) return;
+
                     const hw = w/2;
                     const hh = h/2;
-
                     points = [
-                        {x: -hw, y: hh, label: 'A'}, // Bottom Left (visual)
-                        {x: hw, y: hh, label: 'B'},  // Bottom Right
-                        {x: hw, y: -hh, label: 'C'}, // Top Right
-                        {x: -hw, y: -hh, label: 'D'} // Top Left
+                        {x: -hw, y: hh, label: 'A'}, {x: hw, y: hh, label: 'B'},
+                        {x: hw, y: -hh, label: 'C'}, {x: -hw, y: -hh, label: 'D'}
                     ];
 
                 } else if (currentShape === 'parallelogram') {
-                    const base = parseFloat(document.getElementById('paraBase').value) * PIXEL_SCALE;
-                    const side = parseFloat(document.getElementById('paraSide').value) * PIXEL_SCALE;
-                    const ang = parseFloat(document.getElementById('paraAngle').value) * (Math.PI / 180);
+                    const base = getVal('paraBase') * PIXEL_SCALE;
+                    const side = getVal('paraSide') * PIXEL_SCALE;
+                    const ang = getVal('paraAngle') * (Math.PI / 180);
+                    if (isNaN(base) || isNaN(side) || isNaN(ang)) return;
 
-                    // H calculation
                     const h = side * Math.sin(ang);
                     const offsetX = side * Math.cos(ang);
-
-                    const wTotal = base + offsetX;
-                    const hTotal = h;
-
-                    // Centering
-                    const cx = wTotal / 2;
-                    const cy = -hTotal / 2; // Up is neg
-
-                    // A=(0,0), B=(base, 0), C=(base+off, -h), D=(off, -h)
-                    // Shifted to center
-                    
-                    // Actually, let's just coordinate them relative to a roughly center point
-                    // Bottom-Left
                     const pA = {x: 0, y: 0};
-                    const pB = {x: base, y: 0};
                     const pC = {x: base + offsetX, y: -h};
-                    const pD = {x: offsetX, y: -h};
-
                     const midX = (pA.x + pC.x)/2;
                     const midY = (pA.y + pC.y)/2;
 
                     points = [
-                        {x: pA.x - midX, y: pA.y - midY, label: 'A'},
-                        {x: pB.x - midX, y: pB.y - midY, label: 'B'},
-                        {x: pC.x - midX, y: pC.y - midY, label: 'C'},
-                        {x: pD.x - midX, y: pD.y - midY, label: 'D'}
+                        {x: 0 - midX, y: 0 - midY, label: 'A'},
+                        {x: base - midX, y: 0 - midY, label: 'B'},
+                        {x: (base + offsetX) - midX, y: -h - midY, label: 'C'},
+                        {x: offsetX - midX, y: -h - midY, label: 'D'}
                     ];
 
                 } else if (currentShape === 'circle') {
-                    const r = parseFloat(document.getElementById('circleR').value) * PIXEL_SCALE;
+                    const valR = getVal('circleR');
+                    if (isNaN(valR)) return;
+
+                    const r = valR * PIXEL_SCALE;
+                    points = [{x:0, y:0, label:'O'}]; 
+                    // Draw here directly
+                    ctx.save();
+                    ctx.translate(offset.x, offset.y);
                     ctx.beginPath();
                     ctx.arc(0, 0, r, 0, 2 * Math.PI);
                     ctx.stroke();
-                    
-                    points = [{x:0, y:0, label:'O'}]; // Center
                     if(showVertices) {
+                         ctx.fillStyle = 'blue';
                          ctx.fillStyle = 'black';
                          ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
-                         drawText('O', 0, 0, 'center');
+                         drawText('O', 0, 0);
+                         
+                         // Add a handle on the perimeter for dragging radius
+                         ctx.beginPath(); ctx.arc(r, 0, 5, 0, Math.PI*2); ctx.fillStyle='#3b82f6'; ctx.fill();
                     }
                     if(showLengths) {
-                        ctx.beginPath();
-                        ctx.moveTo(0,0);
-                        ctx.lineTo(r, 0);
-                        ctx.setLineDash([5, 5]);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                        drawText(document.getElementById('circleR').value, r/2, -10, 'mid');
+                        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(r, 0);
+                        ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
+                        drawText(valR.toString(), r/2, -15);
                     }
-                    isValid = false; // Custom draw for circle handled here
+                    ctx.restore();
+                    // Circle is special, add radius point for hit detection
+                    points.push({x: r, y: 0, label: 'R_Handle'});
+                    currentPoints = points; // Save for logic
+                    return; // Skip polygon drawing
 
                 } else if (currentShape === 'angle') {
-                    const len = parseFloat(document.getElementById('angleLen').value) * PIXEL_SCALE;
-                    const deg = parseFloat(document.getElementById('angleSize').value);
-                    const rad = deg * (Math.PI / 180);
+                    const len = getVal('angleLen') * PIXEL_SCALE;
+                    const deg = getVal('angleSize');
+                    if (isNaN(len) || isNaN(deg)) return;
 
+                    const rad = deg * (Math.PI / 180);
                     points = [
                         {x: len, y: 0, label: 'A'},
                         {x: 0, y: 0, label: 'O'},
                         {x: len * Math.cos(-rad), y: len * Math.sin(-rad), label: 'B'}
                     ];
                 } else if (currentShape === 'coords') {
-                    const raw = document.getElementById('coordInput').value.trim().split('\n');
-                    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+                    const inputEl = document.getElementById('coordInput');
+                    if (!inputEl) return;
                     
+                    const raw = inputEl.value.trim().split('\n');
+                    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
                     const tempPoints = raw.map((line, i) => {
                         const [x, y] = line.split(',').map(n => parseFloat(n) * PIXEL_SCALE);
                         if (isNaN(x) || isNaN(y)) return null;
-                        
-                        // Y flip for screen coords (Up is negative)
                         const screenY = -y; 
-                        
-                        if(x < xMin) xMin = x;
-                        if(x > xMax) xMax = x;
-                        if(screenY < yMin) yMin = screenY;
-                        if(screenY > yMax) yMax = screenY;
-
+                        if(x < xMin) xMin = x; if(x > xMax) xMax = x;
+                        if(screenY < yMin) yMin = screenY; if(screenY > yMax) yMax = screenY;
                         return {x: x, y: screenY, label: labels[i] || `P${i}`};
                     }).filter(p => p !== null);
 
                     const cx = (xMin + xMax) / 2;
                     const cy = (yMin + yMax) / 2;
-
-                    points = tempPoints.map(p => ({
-                        x: p.x - cx,
-                        y: p.y - cy,
-                        label: p.label
-                    }));
+                    points = tempPoints.map(p => ({ x: p.x - cx, y: p.y - cy, label: p.label }));
                 }
 
-                // Generic Polygon Drawing
+                // Generic Draw
+                currentPoints = points; // Save for hit detection
                 if (isValid && points.length > 0) {
+                    ctx.save();
+                    ctx.translate(offset.x, offset.y);
+
                     ctx.beginPath();
                     ctx.moveTo(points[0].x, points[0].y);
                     for (let i = 1; i < points.length; i++) {
                         ctx.lineTo(points[i].x, points[i].y);
                     }
-                    if (currentShape !== 'angle') {
-                         ctx.closePath();
-                    }
+                    if (currentShape !== 'angle') ctx.closePath();
                     ctx.stroke();
 
-                    // Labels & Lengths
+                    // Labels, Vertices, Lengths
                     points.forEach((p, i) => {
-                        // Vertices
                         if (showVertices) {
                             const extension = 20;
-                            // Vector from center (0,0) to point
                             const dist = Math.sqrt(p.x*p.x + p.y*p.y);
                             const dirX = dist === 0 ? 0 : p.x / dist;
                             const dirY = dist === 0 ? 0 : p.y / dist;
                             
-                            drawText(p.label, p.x + dirX*extension, p.y + dirY*extension, 'vertex');
+                            drawText(p.label, p.x + dirX*extension, p.y + dirY*extension);
+                            
+                            // Draw vertex dot (highlight if hover/drag?)
+                            ctx.fillStyle = '#3b82f6'; // Blue for interactive hint
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                            ctx.fill();
                         }
 
-                        // Side Lengths (between this and next)
                         if (showLengths && i < points.length && (currentShape !== 'angle' || i < points.length -1)) {
                             let nextIndex = (i + 1) % points.length;
-                            // For angle mode, don't connect last to first
                             if (currentShape === 'angle' && i === points.length -1) return;
-                            if (currentShape === 'angle' && i === 1) return; // Don't draw line A-B, only O-A and O-B
+                            if (currentShape === 'angle' && i === 1) return; 
 
                             const pNext = points[nextIndex];
-                            
-                            // Midpoint
                             const midX = (p.x + pNext.x) / 2;
                             const midY = (p.y + pNext.y) / 2;
-                            
-                            // Calculate length value to display
                             const dx = pNext.x - p.x;
                             const dy = pNext.y - p.y;
                             const pixelLen = Math.sqrt(dx*dx + dy*dy);
                             const val = Math.round((pixelLen / PIXEL_SCALE) * 10) / 10;
                             
-                            // Offset text slightly outward perpendicular to line
-                            // Normal vector (-dy, dx)
-                            // We need to determine "outward". Simple heuristic: away from center (0,0)
-                            let nx = -dy; 
-                            let ny = dx;
+                            let nx = -dy; let ny = dx;
                             const len = Math.sqrt(nx*nx + ny*ny);
                             nx /= len; ny /= len;
-
-                            // Check dot product with midpoint vector to ensure it points out
-                            if (midX*nx + midY*ny < 0) {
-                                nx = -nx; ny = -ny;
-                            }
-
-                            drawText(val.toString(), midX + nx*15, midY + ny*15, 'len');
+                            if (midX*nx + midY*ny < 0) { nx = -nx; ny = -ny; }
+                            drawText(val.toString(), midX + nx*15, midY + ny*15);
                         }
                     });
 
-                    // Angle Mark (Simple implementation for Triangle/Angle/Para)
-                    if (showAngles && (currentShape === 'triangle' || currentShape === 'triangleSAS' || currentShape === 'angle' || currentShape === 'parallelogram')) {
-                        // Draw arc at 2nd point (index 1) for triangle/angle usually user focuses on corner
-                        // For generic, let's draw arcs at all corners if poly
-                        
+                    // Angle Arcs
+                    if (showAngles && (['triangle','triangleSAS','angle','parallelogram'].includes(currentShape))) {
                         points.forEach((p, i) => {
                              const prev = points[(i - 1 + points.length) % points.length];
                              const next = points[(i + 1) % points.length];
-                             
-                             if(currentShape === 'angle' && i !== 1) return; // Only at O
+                             if(currentShape === 'angle' && i !== 1) return; 
 
                              const a1 = Math.atan2(prev.y - p.y, prev.x - p.x);
                              const a2 = Math.atan2(next.y - p.y, next.x - p.x);
-                             
                              ctx.beginPath();
-                             ctx.arc(p.x, p.y, 20, a1, a2, a2 < a1); // Simple arc logic, might need refinement for concave
+                             ctx.arc(p.x, p.y, 20, a1, a2, a2 < a1);
                              ctx.stroke();
                         });
                     }
+                    ctx.restore();
                 }
-
             } catch (e) {
                 console.error("Drawing error:", e);
             }
-
-            ctx.restore();
         }
 
-        function drawText(text, x, y, type) {
+        function drawText(text, x, y) {
             ctx.fillStyle = '#000000';
             ctx.fillText(text, x, y);
         }
 
-        // Dragging Logic
+        // --- Interaction Logic ---
+
+        function getMousePos(evt) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: evt.clientX - rect.left,
+                y: evt.clientY - rect.top
+            };
+        }
+
+        // Mousedown
         canvas.addEventListener('mousedown', e => {
-            isDragging = true;
-            dragStart = { x: e.clientX, y: e.clientY };
+            const pos = getMousePos(e);
+            
+            // Check for vertex hit
+            let hitIndex = -1;
+            // Check in reverse order so top elements are clicked first
+            for (let i = currentPoints.length - 1; i >= 0; i--) {
+                const p = currentPoints[i];
+                // Points are stored relative to offset. Convert to screen.
+                const screenX = p.x + offset.x;
+                const screenY = p.y + offset.y;
+                const dx = pos.x - screenX;
+                const dy = pos.y - screenY;
+                if (dx*dx + dy*dy < HIT_RADIUS*HIT_RADIUS) {
+                    hitIndex = i;
+                    break;
+                }
+            }
+
+            if (hitIndex !== -1) {
+                isDraggingVertex = true;
+                draggingVertexIndex = hitIndex;
+                isDragging = true; // Block pan
+            } else {
+                isDragging = true;
+                isDraggingVertex = false;
+                dragStart = pos;
+            }
         });
 
+        // Mousemove
         window.addEventListener('mousemove', e => {
-            if (isDragging) {
-                const dx = e.clientX - dragStart.x;
-                const dy = e.clientY - dragStart.y;
+            const pos = getMousePos(e);
+            
+            // Cursor Hover Effect
+            if (!isDraggingVertex && !isDragging) {
+                let hover = false;
+                for (let i = 0; i < currentPoints.length; i++) {
+                    const p = currentPoints[i];
+                    const screenX = p.x + offset.x;
+                    const screenY = p.y + offset.y;
+                    const dx = pos.x - screenX;
+                    const dy = pos.y - screenY;
+                    if (dx*dx + dy*dy < HIT_RADIUS*HIT_RADIUS) {
+                        hover = true;
+                        break;
+                    }
+                }
+                canvas.style.cursor = hover ? 'pointer' : 'move';
+            }
+
+            if (isDraggingVertex && currentPoints[draggingVertexIndex]) {
+                // Determine mouse pos relative to Shape Center (offset)
+                const mouseRelX = pos.x - offset.x;
+                const mouseRelY = pos.y - offset.y;
+                
+                // Helper to update input value
+                const setVal = (id, val) => {
+                    const el = document.getElementById(id);
+                    if(el) el.value = Math.round(val * 10) / 10;
+                };
+
+                // Logic per shape
+                if (currentShape === 'triangle') {
+                    // Update current point in temp array to calc distances
+                    const newPts = [...currentPoints];
+                    newPts[draggingVertexIndex] = { x: mouseRelX, y: mouseRelY };
+                    
+                    // Indices: A=0, B=1, C=2
+                    // Side A = dist(B,C)
+                    // Side B = dist(A,C)
+                    // Side C = dist(A,B)
+                    const dist = (p1, p2) => Math.sqrt((p1.x-p2.x)**2 + (p1.y-p2.y)**2) / PIXEL_SCALE;
+                    
+                    setVal('sideA', dist(newPts[1], newPts[2]));
+                    setVal('sideB', dist(newPts[0], newPts[2]));
+                    setVal('sideC', dist(newPts[0], newPts[1]));
+                
+                } else if (currentShape === 'triangleSAS') {
+                    // Points: A=0(origin), B=1(on axis), C=2(angled)
+                    // Drag A: Move whole shape? For now, ignore or just pan.
+                    // Drag B: Update Side B (dist A-B).
+                    // Drag C: Update Side A (dist A-C) and Angle.
+                    
+                    if (draggingVertexIndex === 1) { // B
+                        const d = Math.sqrt(mouseRelX*mouseRelX + mouseRelY*mouseRelY) / PIXEL_SCALE;
+                        setVal('sasSideB', d);
+                    } else if (draggingVertexIndex === 2) { // C
+                        const d = Math.sqrt(mouseRelX*mouseRelX + mouseRelY*mouseRelY) / PIXEL_SCALE;
+                        let deg = Math.atan2(-mouseRelY, mouseRelX) * (180/Math.PI);
+                        if(deg < 0) deg += 360;
+                        setVal('sasSideA', d);
+                        setVal('sasAngle', deg);
+                    }
+
+                } else if (currentShape === 'rectangle') {
+                    // Symmetric resize
+                    const w = Math.abs(mouseRelX) * 2 / PIXEL_SCALE;
+                    const h = Math.abs(mouseRelY) * 2 / PIXEL_SCALE;
+                    setVal('rectW', w);
+                    setVal('rectH', h);
+
+                } else if (currentShape === 'circle') {
+                    // Index 1 is the handle at (r, 0)
+                    if (draggingVertexIndex === 1) {
+                         const r = Math.sqrt(mouseRelX*mouseRelX + mouseRelY*mouseRelY) / PIXEL_SCALE;
+                         setVal('circleR', r);
+                    }
+
+                } else if (currentShape === 'angle') {
+                    // A=0(tip), O=1(vertex), B=2(base)
+                    // Drag A: update len, angle
+                    if (draggingVertexIndex === 2) {
+                         const len = Math.sqrt(mouseRelX*mouseRelX + mouseRelY*mouseRelY) / PIXEL_SCALE;
+                         let deg = Math.atan2(-mouseRelY, mouseRelX) * (180/Math.PI);
+                         // Normalize for intuitive angle behavior (0 is right)
+                         // Drawing logic: B = len * cos(-rad)
+                         // atan2(-y, x) gives rad.
+                         if(deg < 0) deg += 360;
+                         setVal('angleLen', len);
+                         setVal('angleSize', deg);
+                    }
+
+                } else if (currentShape === 'coords') {
+                    // Update specific line in text area
+                    const ta = document.getElementById('coordInput');
+                    const lines = ta.value.split('\n');
+                    if (lines[draggingVertexIndex]) {
+                        // Convert screen Y (up is neg) back to math Y (up is pos)
+                        const mathX = Math.round(mouseRelX / PIXEL_SCALE * 10) / 10;
+                        const mathY = Math.round(-mouseRelY / PIXEL_SCALE * 10) / 10;
+                        lines[draggingVertexIndex] = `${mathX}, ${mathY}`;
+                        ta.value = lines.join('\n');
+                    }
+                }
+
+                updateCanvas();
+
+            } else if (isDragging) {
+                // Pan Logic
+                const dx = pos.x - dragStart.x;
+                const dy = pos.y - dragStart.y;
                 offset.x += dx;
                 offset.y += dy;
-                dragStart = { x: e.clientX, y: e.clientY };
+                dragStart = pos;
                 updateCanvas();
             }
         });
 
         window.addEventListener('mouseup', () => {
             isDragging = false;
+            isDraggingVertex = false;
+            draggingVertexIndex = -1;
+            canvas.style.cursor = 'default';
         });
 
         function resetView() {
@@ -680,11 +797,6 @@
         }
 
         function downloadImage() {
-            // Create a temporary canvas to handle background transparency/grid choice
-            // Current requirement: PNG (Transparent). 
-            // The main canvas has a CSS background, but the context itself is transparent pixels unless drawn on.
-            // If we just toDataURL, it will be transparent (good).
-            
             const link = document.createElement('a');
             link.download = `figure-${currentShape}.png`;
             link.href = canvas.toDataURL('image/png');
